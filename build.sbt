@@ -12,6 +12,7 @@ lazy val `scalaplat-skeleton` = project.in(file("."))
     Dependencies.akkaActorTyped,
     Dependencies.akkaHttp,
     Dependencies.akkaStream,
+    Dependencies.jacksonScala,
     Dependencies.logback,
     Dependencies.scalaLogging,
     Dependencies.akkaHttpTestkit % Test,
