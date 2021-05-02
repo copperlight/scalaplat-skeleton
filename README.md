@@ -6,7 +6,7 @@ It is a simple Akka Http Server with two routes defined for the API.
 
 There are a few tests which exercise the API routes.
 
-Build the project and run tests with `make`, which runs the `build` target.
+Build the project, run tests and validation with `make`, which runs the `build` target.
 
 Add license headers and fix `scalafmt` warnings with `make format`.
 
