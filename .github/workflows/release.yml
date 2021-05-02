@@ -24,4 +24,4 @@ jobs:
       - name: Build
         run: |
           git fetch --unshallow --tags
-          cat /dev/null | project/sbt clean test build
+          cat /dev/null | project/sbt clean test
