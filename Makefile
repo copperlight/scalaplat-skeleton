@@ -1,3 +1,4 @@
+JAR  := $(shell ls -t target/scala-2.13/*.jar 2> /dev/null |head -1)
 JAVA := ${JAVA_HOME}/bin/java
 SBT  := project/sbt
 
@@ -19,7 +20,6 @@ fatjar:
 format:
 	$(SBT) formatLicenseHeaders scalafmtAll
 
-JAR := $(shell ls -t target/scala-2.13/*.jar 2> /dev/null |head -1)
 run:
 ifeq ($(JAR),)
 	$(error cannot find jar file, run the fatjar task to produce one)
