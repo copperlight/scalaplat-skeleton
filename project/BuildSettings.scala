@@ -16,7 +16,7 @@ object BuildSettings {
 
   lazy val buildSettings: Seq[Def.Setting[_]] = Seq(
     organization := "io.github.copperlight",
-    scalaVersion := Dependencies.Versions.scala,
+    scalaVersion := Dependencies.Version.scala,
     scalacOptions ++= BuildSettings.compilerFlags,
     crossPaths := false,
     sourcesInBase := false,
