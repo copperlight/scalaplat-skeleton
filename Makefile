@@ -7,6 +7,9 @@ SBT  := project/sbt
 build:
 	$(SBT) clean test checkLicenseHeaders scalafmtCheckAll
 
+check:
+	$(SBT) checkLicenseHeaders scalafmtCheckAll
+
 clean:
 	$(SBT) clean
 
