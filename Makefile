@@ -2,7 +2,7 @@ JAR  := $(shell ls -t target/scala-2.13/*.jar 2> /dev/null |head -1)
 JAVA := ${JAVA_HOME}/bin/java
 SBT  := project/sbt
 
-.PHONY: build clean coverage fatjar format run
+.PHONY: build check clean coverage fatjar format run
 
 build:
 	$(SBT) clean test checkLicenseHeaders scalafmtCheckAll
