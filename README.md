@@ -1,6 +1,6 @@
 # Scalaplat Skeleton
 
-Example project for a single service leveraging scalplat libraries and conventions.
+Example project for a single service leveraging scalaplat libraries and conventions.
 
 There is a simple Akka Http Server with two routes defined for the API.
 
