@@ -39,4 +39,9 @@ object BuildSettings {
     Resolver.mavenLocal,
     Resolver.mavenCentral
   )
+
+  def profile: Project => Project = p => {
+    p.settings(buildSettings: _*)
+      .settings(libraryDependencies ++= commonDeps)
+  }
 }
