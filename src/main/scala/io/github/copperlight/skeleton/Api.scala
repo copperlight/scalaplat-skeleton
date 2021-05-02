@@ -1,3 +1,18 @@
+/*
+ * Copyright 2020-2021 Matthew Johnson
+ *
+ * Licensed under the Apache License, Version 2.0 (the "License");
+ * you may not use this file except in compliance with the License.
+ * You may obtain a copy of the License at
+ *
+ *     http://www.apache.org/licenses/LICENSE-2.0
+ *
+ * Unless required by applicable law or agreed to in writing, software
+ * distributed under the License is distributed on an "AS IS" BASIS,
+ * WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+ * See the License for the specific language governing permissions and
+ * limitations under the License.
+ */
 package io.github.copperlight.skeleton
 
 import akka.http.scaladsl.model.ContentTypes
@@ -6,16 +21,27 @@ import akka.http.scaladsl.server.Directives._
 import akka.http.scaladsl.server.Route
 
 object Api {
+
   val route: Route = {
     concat(
       path("hello") {
         get {
-          complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, "<h1>Say hello to my akka friend.</h1>"))
+          complete(
+            HttpEntity(
+              ContentTypes.`text/html(UTF-8)`,
+              "<h1>Say hello to my akka friend.</h1>"
+            )
+          )
         }
       },
       pathEndOrSingleSlash {
         get {
-          complete(HttpEntity(ContentTypes.`text/html(UTF-8)`, """<h1>Say <a href="/hello">/hello</a>.</h1>"""))
+          complete(
+            HttpEntity(
+              ContentTypes.`text/html(UTF-8)`,
+              """<h1>Say <a href="/hello">/hello</a>.</h1>"""
+            )
+          )
         }
       }
     )
