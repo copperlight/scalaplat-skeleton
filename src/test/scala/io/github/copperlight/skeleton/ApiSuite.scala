@@ -1,4 +1,4 @@
-package io.giuthub.copperlight.skeleton
+package io.github.copperlight.skeleton
 
 import akka.http.scaladsl.model.StatusCodes
 import akka.http.scaladsl.server.ExceptionHandler
