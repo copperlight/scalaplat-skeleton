@@ -1,7 +1,7 @@
-# send /dev/null to stdin to avoid interactive prompts, in case there is a script failure
-SBT := cat /dev/null | project/sbt
+JAVA := ${JAVA_HOME}/bin/java
+SBT  := project/sbt
 
-.PHONY: build clean coverage format
+.PHONY: build clean coverage fatjar format run
 
 build:
 	$(SBT) clean test checkLicenseHeaders scalafmtCheckAll
@@ -13,5 +13,15 @@ coverage:
 	$(SBT) clean coverage test coverageReport
 	$(SBT) coverageAggregate
 
+fatjar:
+	$(SBT) assembly
+
 format:
 	$(SBT) formatLicenseHeaders scalafmtAll
+
+JAR := $(shell ls -t target/scala-2.13/*.jar 2> /dev/null |head -1)
+run:
+ifeq ($(JAR),)
+	$(error cannot find jar file, run the fatjar task to produce one)
+endif
+	$(JAVA) -jar $(JAR)
