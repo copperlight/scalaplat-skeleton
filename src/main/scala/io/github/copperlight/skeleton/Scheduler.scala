@@ -34,6 +34,8 @@ import scala.util.control.Breaks.break
   */
 class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
 
+  import Scheduler._
+
   private val stats = Stats
   private val queue = new DelayQueue[DelayedTask]
   private val factory = newThreadFactory(id)
@@ -85,7 +87,7 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
     }
   }
 
-  private def startThreads(): Unit = {
+  def startThreads(): Unit = {
     if (!shutdown) {
       started = true
       for (i <- threads.indices) {
@@ -97,6 +99,41 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
       }
     }
   }
+
+  /** Actual task running in the threads. It will block on trying to get a task to execute from the
+    * queue until a task is ready.
+    */
+  private final class Worker extends Runnable {
+
+    override def run(): Unit = {
+      try {
+        // Note: do not use Thread.interrupted() because it will clear the interrupt
+        // status of the thread.
+        while (!Thread.currentThread.isInterrupted) {
+          try {
+            val task = queue.take
+            stats.incrementActiveTaskCount()
+            stats.taskExecutionDelay.set((clock.wallTime - task.getNextExecutionTime) / 1000)
+
+            val start = clock.wallTime
+            task.runAndReschedule(queue, stats)
+            stats.taskExecutionTime.set((clock.wallTime - start) / 1000)
+          } catch {
+            case e: InterruptedException =>
+              logger.debug("task interrupted", e)
+              break
+          } finally {
+            stats.decrementActiveTaskCount()
+          }
+        }
+      } finally {
+        startThreads()
+      }
+    }
+  }
+}
+
+object Scheduler extends StrictLogging {
 
   /** Repetition policy for scheduled tasks.
     *
@@ -160,28 +197,28 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
     // TODO: add a thread which reports once per minute and resets values?
 
     /** Counter that tracks the number of active tasks. */
-    private[Scheduler] val activeCount = new AtomicInteger()
+    val activeCount = new AtomicInteger()
     def incrementActiveTaskCount(): Unit = activeCount.incrementAndGet
     def decrementActiveTaskCount(): Unit = activeCount.decrementAndGet
 
     /** Timer for measuring the execution time of the task. */
-    private[Scheduler] val taskExecutionTime = new AtomicLong()
+    val taskExecutionTime = new AtomicLong()
 
     /** Timer for measuring the delay for the task. This should be close to zero, but if the system
       * is overloaded or having trouble, then there might be a large delay.
       */
-    private[Scheduler] val taskExecutionDelay = new AtomicLong()
+    val taskExecutionDelay = new AtomicLong()
 
     /** Counter that will be incremented each time an expected execution is skipped when using
       * [[Policy#FIXED_RATE_SKIP_IF_LONG]].
       */
-    private[Scheduler] val skipped = new AtomicInteger()
+    val skipped = new AtomicInteger()
     def incrementSkipped(): Unit = skipped.incrementAndGet
 
     /** Counter for tracking the number of uncaught exceptions by the simple class name of the
       * exception.
       */
-    private[Scheduler] val uncaughtExceptions = new ConcurrentHashMap[String, Int]()
+    val uncaughtExceptions = new ConcurrentHashMap[String, Int]()
 
     def incrementUncaught(t: Throwable): Unit = {
       val cls = t.getClass.getSimpleName
@@ -209,7 +246,7 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
     private var nextExecutionTime = initialExecutionTime
 
     @volatile
-    private var thread = new Thread()
+    private var thread: Thread = _
 
     @volatile
     private var cancelled = false
@@ -218,7 +255,7 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
     def getNextExecutionTime: Long = nextExecutionTime
 
     /** Update the next execution time based on the options for this task. */
-    private[Scheduler] def updateNextExecutionTime(stats: Stats.type): Unit = {
+    def updateNextExecutionTime(stats: Stats.type): Unit = {
       options.schedulingPolicy match {
         case Policy.FIXED_DELAY =>
           nextExecutionTime = clock.wallTime + options.frequencyMillis
@@ -245,9 +282,9 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
       stats: Stats.type
     ): Unit = {
       thread = Thread.currentThread
-      var scheduleAgain = options.schedulingPolicy ne Policy.RUN_ONCE
-      try if (!isDone) {
-        task.run()
+      var scheduleAgain = options.schedulingPolicy != Policy.RUN_ONCE
+      try {
+        if (!isDone) task.run()
       } catch {
         case t: Throwable =>
           // This catches Throwable because we cannot control the task and thus cannot
@@ -258,7 +295,7 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
       } finally {
         thread = null
         if (scheduleAgain && !isDone) {
-          updateNextExecutionTime(stats.skipped)
+          updateNextExecutionTime(stats)
           queue.put(this)
         } else {
           cancelled = true
@@ -300,38 +337,6 @@ class Scheduler(clock: Clock, id: String, poolSize: Int) extends StrictLogging {
 
     override def get(timeout: Long, unit: TimeUnit): Unit = {
       throw new UnsupportedOperationException
-    }
-  }
-
-  /** Actual task running in the threads. It will block on trying to get a task to execute from the
-    * queue until a task is ready.
-    */
-  private final class Worker extends Runnable {
-
-    override def run(): Unit = {
-      try {
-        // Note: do not use Thread.interrupted() because it will clear the interrupt
-        // status of the thread.
-        while (!Thread.currentThread.isInterrupted) {
-          try {
-            val task = queue.take
-            stats.incrementActiveTaskCount()
-            stats.taskExecutionDelay.set((clock.wallTime - task.getNextExecutionTime) / 1000)
-
-            val start = clock.wallTime
-            task.runAndReschedule(queue, stats)
-            stats.taskExecutionTime.set((clock.wallTime - start) / 1000)
-          } catch {
-            case e: InterruptedException =>
-              logger.debug("task interrupted", e)
-              break
-          } finally {
-            stats.decrementActiveTaskCount()
-          }
-        }
-      } finally {
-        startThreads()
-      }
     }
   }
 }

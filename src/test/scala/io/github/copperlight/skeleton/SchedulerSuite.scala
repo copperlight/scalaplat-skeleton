@@ -2,6 +2,7 @@ package io.github.copperlight.skeleton
 
 import munit.FunSuite
 
+import java.io.IOError
 import java.time.Duration
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.ScheduledFuture
@@ -9,209 +10,218 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 
 class SchedulerSuite extends FunSuite {
-  test("updateNextFixedDelay") {
+  test("update next FIXED_DELAY") {
     val clock = new ManualClock
-//    val registry = new DefaultRegistry(clock)
-//    val skipped = registry.counter("skipped")
-    val options =
-      new Scheduler.Options.withFrequency(Scheduler.Policy.FIXED_DELAY, Duration.ofSeconds(10))
-    clock.setWallTime(5437L)
-    val task = new Scheduler.DelayedTask(
-      clock,
-      options,
-      () => {
-        def foo(): Unit = {}
-        foo()
-      }
+    val stats = Scheduler.Stats
+
+    val options = Scheduler.Options.withFrequency(
+      Scheduler.Policy.FIXED_DELAY,
+      Duration.ofSeconds(10)
     )
+
+    clock.setWallTime(5437L)
+    val task = new Scheduler.DelayedTask(clock, options, () => {})
     assertEquals(5437L, task.getNextExecutionTime)
-    assertEquals(0L, skipped.count)
+    assertEquals(0, stats.skipped.get)
+
     clock.setWallTime(12123L)
-    task.updateNextExecutionTime(skipped)
+    task.updateNextExecutionTime(stats)
     assertEquals(22123L, task.getNextExecutionTime)
-    assertEquals(0L, skipped.count)
+    assertEquals(0, stats.skipped.get)
+
     clock.setWallTime(27000L)
-    task.updateNextExecutionTime(skipped)
+    task.updateNextExecutionTime(stats)
     assertEquals(37000L, task.getNextExecutionTime)
-    assertEquals(0L, skipped.count)
+    assertEquals(0, stats.skipped.get)
   }
 
-  test("updateNextFixedRateSkip") {
+  test("update next FIXED_RATE skip") {
     val clock = new ManualClock
-    val registry = new DefaultRegistry(clock)
-    val skipped = registry.counter("skipped")
-    val options = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_RATE_SKIP_IF_LONG, Duration.ofSeconds(10))
+    val stats = Scheduler.Stats
+
+    val options = Scheduler.Options.withFrequency(
+      Scheduler.Policy.FIXED_RATE_SKIP_IF_LONG,
+      Duration.ofSeconds(10)
+    )
+
     clock.setWallTime(5437L)
-    val task = new Scheduler.DelayedTask(
-      clock,
-      options,
-      () => {
-        def foo(): Unit = {}
-        foo()
-      }
-    )
+    val task = new Scheduler.DelayedTask(clock, options, () => {})
     assertEquals(5437L, task.getNextExecutionTime)
-      .assertEquals(0L, skipped.count)
+    assertEquals(0, stats.skipped.get)
+
     clock.setWallTime(12123L)
-    task.updateNextExecutionTime(skipped)
+    task.updateNextExecutionTime(stats)
     assertEquals(15437L, task.getNextExecutionTime)
-    assertEquals(0L, skipped.count)
+    assertEquals(0, stats.skipped.get)
+
     clock.setWallTime(27000L)
-    task.updateNextExecutionTime(skipped)
+    task.updateNextExecutionTime(stats)
     assertEquals(35437L, task.getNextExecutionTime)
-    assertEquals(1L, skipped.count)
+    assertEquals(1, stats.skipped.get)
+
     clock.setWallTime(57000L)
-    task.updateNextExecutionTime(skipped)
+    task.updateNextExecutionTime(stats)
     assertEquals(65437L, task.getNextExecutionTime)
-    assertEquals(3L, skipped.count)
+    assertEquals(3, stats.skipped.get)
   }
 
-  private def numberOfThreads(id: String): Long = {
-    Thread.getAllStackTraces.keySet.stream
-      .filter((t: Thread) => t.getName.startsWith("spectator-" + id))
-      .count
-  }
+  test("shutdown stops threads") {
+    def numberOfThreads(id: String): Long = {
+      Thread.getAllStackTraces.keySet.stream
+        .filter((t: Thread) => t.getName.startsWith("scheduler-" + id))
+        .count
+    }
 
-  test("shutdownStopsThreads") {
-    val s = new Scheduler(new DefaultRegistry, "shutdown", 1)
-    // Schedule something to force it to start the threads
-    val opts = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_RATE_SKIP_IF_LONG, Duration.ofMillis(10))
+    val s = new Scheduler(SystemClock, "shutdown", 1)
+
+    val opts = Scheduler.Options
+      .withFrequency(
+        Scheduler.Policy.FIXED_RATE_SKIP_IF_LONG,
+        Duration.ofMillis(10)
+      )
       .withStopOnFailure(false)
-    val f = s.schedule(
-      opts,
-      () => {
-        def foo(): Unit = {}
 
-        foo()
-      }
-    )
+    // schedule something, to start the thread
+    s.schedule(opts, () => {})
     assertEquals(1L, numberOfThreads("shutdown"))
-    // Shutdown and wait a bit, this gives the thread a chance to restart
-    s.shutdown()
+
+    // shutdown and wait, to give the thread a chance to restart
+    s.shutdownThreads()
     Thread.sleep(300)
     assertEquals(0L, numberOfThreads("shutdown"))
   }
 
-  test("stopOnFailureFalseThrowable") {
-    val s = new Scheduler(new DefaultRegistry, "test", 1)
-    val opts = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_RATE_SKIP_IF_LONG, Duration.ofMillis(10))
+  test("stopOnFailure=false throwable") {
+    val s = new Scheduler(SystemClock, "test", 1)
+
+    val opts = Scheduler.Options
+      .withFrequency(
+        Scheduler.Policy.FIXED_RATE_SKIP_IF_LONG,
+        Duration.ofMillis(10)
+      )
       .withStopOnFailure(false)
+
     val latch = new CountDownLatch(5)
+
     val f = s.schedule(
       opts,
       () => {
-        def foo() = {
-          latch.countDown()
-          throw new IOError(new RuntimeException("stop"))
-        }
-
-        foo()
+        latch.countDown()
+        throw new IOError(new RuntimeException("stop"))
       }
     )
+
     assert(latch.await(60, TimeUnit.SECONDS))
     assert(!f.isDone)
-    s.shutdown()
+    s.shutdownThreads()
   }
 
-  test("stopOnFailureFalse") {
-    val s = new Scheduler(new DefaultRegistry, "test", 2)
-    val opts = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_DELAY, Duration.ofMillis(10))
+  test("stopOnFailure=false") {
+    val s = new Scheduler(SystemClock, "test", 2)
+
+    val opts = Scheduler.Options
+      .withFrequency(
+        Scheduler.Policy.FIXED_DELAY,
+        Duration.ofMillis(10)
+      )
       .withStopOnFailure(false)
+
     val latch = new CountDownLatch(5)
+
     val f = s.schedule(
       opts,
       () => {
-        def foo() = {
-          latch.countDown()
-          throw new RuntimeException("stop")
-        }
-
-        foo()
+        latch.countDown()
+        throw new RuntimeException("stop")
       }
     )
+
     assert(latch.await(60, TimeUnit.SECONDS))
     assert(!f.isDone)
-    s.shutdown()
+    s.shutdownThreads()
   }
 
-  test("stopOnFailureTrue") {
-    val s = new Scheduler(new DefaultRegistry, "test", 2)
-    val opts = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_DELAY, Duration.ofMillis(10))
+  test("stopOnFailure=true") {
+    val s = new Scheduler(SystemClock, "test", 2)
+
+    val opts = Scheduler.Options
+      .withFrequency(
+        Scheduler.Policy.FIXED_DELAY,
+        Duration.ofMillis(10)
+      )
       .withStopOnFailure(true)
+
     val latch = new CountDownLatch(1)
+
     val f = s.schedule(
       opts,
       () => {
-        def foo() = {
-          latch.countDown()
-          throw new RuntimeException("stop")
-        }
-
-        foo()
+        latch.countDown()
+        throw new RuntimeException("stop")
       }
     )
+
     assert(latch.await(60, TimeUnit.SECONDS))
-    while ({
-      !f.isDone
-    }) { // This will be an endless loop if broken
-    }
-    s.shutdown()
+    // wait for isDone to propagate. this will be endless, if the test breaks.
+    while (!f.isDone) {}
+    s.shutdownThreads()
   }
 
   test("cancel") {
-    val s = new Scheduler(new DefaultRegistry, "test", 2)
-    val opts = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_DELAY, Duration.ofMillis(10))
+    val s = new Scheduler(SystemClock, "test", 2)
+
+    val opts = Scheduler.Options
+      .withFrequency(
+        Scheduler.Policy.FIXED_DELAY,
+        Duration.ofMillis(10)
+      )
       .withStopOnFailure(false)
+
     val latch = new CountDownLatch(1)
     val ref = new AtomicReference[ScheduledFuture[_]]
+
     ref.set(
       s.schedule(
         opts,
         () => {
-          def foo() = try {
-            while ({
-              ref.get == null
-            }) {}
+          try {
+            while (ref.get == null) {}
             ref.get.cancel(true)
             Thread.sleep(600000L)
           } catch {
-            case e: InterruptedException =>
+            case _: InterruptedException =>
               latch.countDown()
           }
-
-          foo()
         }
       )
     )
+
     assert(latch.await(60, TimeUnit.SECONDS))
     assert(ref.get.isDone)
-    s.shutdown()
+    s.shutdownThreads()
   }
 
-  test("threadsAreReplaced") {
-    val s = new Scheduler("test", 1)
-    val opts = new Scheduler.Options()
-      .withFrequency(Scheduler.Policy.FIXED_DELAY, Duration.ofMillis(10))
+  test("threads are replaced") {
+    val s = new Scheduler(SystemClock, "test", 1)
+
+    val opts = Scheduler.Options
+      .withFrequency(
+        Scheduler.Policy.FIXED_DELAY,
+        Duration.ofMillis(10)
+      )
       .withStopOnFailure(false)
+
     val latch = new CountDownLatch(10)
+
     s.schedule(
       opts,
       () => {
-        def foo() = {
-          latch.countDown()
-          Thread.currentThread.interrupt()
-        }
-
-        foo()
+        latch.countDown()
+        Thread.currentThread.interrupt()
       }
     )
+
     assert(latch.await(60, TimeUnit.SECONDS))
-    s.shutdown()
+    s.shutdownThreads()
   }
 }
